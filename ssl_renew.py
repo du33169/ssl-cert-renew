@@ -19,7 +19,6 @@ def main(a,b): # dump args, for cloud function entry
         action = "DescribeCertificates",
         params =  {
             "Limit": 1000,
-            "Renew":1,
             "CertificateStatus": [1],
             "FilterExpiring": 1
         }
@@ -28,35 +27,40 @@ def main(a,b): # dump args, for cloud function entry
     # 	json.dump(res, f, indent=4)
 
     RenewCertDict={r["CertificateId"]:r for r in res["Response"]["Certificates"]}
-    print("renewable CertId List:",list(RenewCertDict.keys()))
+    print("Expiring CertId List:",list(RenewCertDict.keys()))
 
 
     for certId,certInfo in RenewCertDict.items():
-        # request new cert
         domain=certInfo["Domain"]
-        res=tc.send(
-            action="ApplyCertificate",
-            params={
-                "DvAuthMethod": "DNS_AUTO",
-                "DomainName": domain,
-                "OldCertificateId": certId,
-                "DeleteDnsAutoRecord": True
-            }
-        )
-        newId=res["Response"]["CertificateId"]
-        print(f"New certId {newId} for {domain} requested.")
-
-        # update resources
-        res=tc.send(
-            action="UpdateCertificateInstance",
-            params={
-                "OldCertificateId": certId,
-                "CertificateId": newId,
-                "ResourceTypes":["cdn"]
-            }
-        )
-        print(json.dumps(res["Response"], indent=4, ensure_ascii=False))
-        print(f"update domain {domain} from cert {certId} to {newId}", "success" if int(res["Response"]["DeployStatus"])==1 else "failed")
+        if certInfo["RenewAble"]==True:
+            print(certId, "RenewAble:",certInfo["RenewAble"], "requesting new cert...")
+            # request new cert
+            res=tc.send(
+                action="ApplyCertificate",
+                params={
+                    "DvAuthMethod": "DNS_AUTO",
+                    "DomainName": domain,
+                    "OldCertificateId": certId,
+                    "DeleteDnsAutoRecord": True
+                }
+            )
+            newId=res["Response"]["CertificateId"]
+            print(f"New certId {newId} for {domain} requested.")
+        
+        if certInfo["HasRenewOrder"]!="" and certInfo["HasRenewOrder"]!=None:
+            newId=certInfo["HasRenewOrder"]
+            print(certId, "Has Renew Order:",newId, "updating cert...")
+            # update resources
+            res=tc.send(
+                action="UpdateCertificateInstance",
+                params={
+                    "OldCertificateId": certId,
+                    "CertificateId": newId,
+                    "ResourceTypes":["cdn"]
+                }
+            )
+            print(json.dumps(res["Response"], indent=4, ensure_ascii=False))
+            print(f"update domain {domain} from cert {certId} to {newId}", "success" if int(res["Response"]["DeployStatus"])==1 else "failed")
 
     # remove expired/cancelled/revoked cert
     removeList=[]
@@ -89,6 +93,6 @@ def main(a,b): # dump args, for cloud function entry
         print(json.dumps(res["Response"], indent=4, ensure_ascii=False))
     else:
         print("All certs clear.")
-        
+
 if __name__ == "__main__":
     main(0,0)
